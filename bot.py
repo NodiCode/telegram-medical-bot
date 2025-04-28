@@ -7,10 +7,10 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # Инициализируем бота
-bot = telebot.TeleBot(os.environ.get("6996025306:AAFrVMSC-o6rA-CWof4u3roA3pDr6t1H4p4"), parse_mode=None)
+bot = telebot.TeleBot(os.environ.get("TELEGRAM_BOT_TOKEN"), parse_mode=None)
 
 # Инициализируем Google Gen AI
-client = genai.Client(api_key=os.environ.get("AIzaSyAHhpJldughwEcIY5w0evRgRIz-unZ7-wE"))
+client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
 
 # Ваш текущий код бота
 # ...
