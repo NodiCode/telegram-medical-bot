@@ -1,94 +1,75 @@
 import os
 import telebot
 from google import genai
-from google.genai import types
+from flask import Flask, request, jsonify
 
-# Initialize Telegram bot
-bot = telebot.TeleBot("6996025306:AAFrVMSC-o6rA-CWof4u3roA3pDr6t1H4p4", parse_mode=None)
+# Инициализируем Flask приложение
+app = Flask(__name__)
 
-# Configure Gemini API with the new SDK
-# You can set the API key as an environment variable: export GOOGLE_API_KEY="YOUR_API_KEY"
-# Or configure it directly:
-client = genai.Client(api_key="AIzaSyAHhpJldughwEcIY5w0evRgRIz-unZ7-wE")
+# Инициализируем бота
+bot = telebot.TeleBot(os.environ.get("6996025306:AAFrVMSC-o6rA-CWof4u3roA3pDr6t1H4p4"), parse_mode=None)
 
-# System instruction in Russian for medical diagnosis
-system_instruction = """
-Здравствуйте, Я - чат-бот для медицинской диагностики. 
-Расскажите мне о ваших симптомах, и я постараюсь предложить предварительный диагноз.
-"""
+# Инициализируем Google Gen AI
+client = genai.Client(api_key=os.environ.get("AIzaSyAHhpJldughwEcIY5w0evRgRIz-unZ7-wE"))
 
-# Dictionary to store conversations for each user
-user_conversations = {}
+# Ваш текущий код бота
+# ...
 
-@bot.message_handler(func=lambda m: True)
-def handle_message(message):
-    user_id = message.from_user.id
+# Добавляем API эндпоинт для медицинской диагностики
+@app.route('/api/diagnose', methods=['POST'])
+def diagnose():
+    data = request.json
+    symptoms = data.get('symptoms', [])
     
-    # Initialize conversation for new users
-    if user_id not in user_conversations:
-        user_conversations[user_id] = []
-        
-        # Send a welcome message to new users
-        bot.send_message(message.chat.id, 
-                         "Здравствуйте! Я - чат-бот для медицинской диагностики. Расскажите мне о ваших симптомах.")
+    if not symptoms:
+        return jsonify({"error": "No symptoms provided"}), 400
+    
+    # Создаем простой промпт с симптомами
+    prompt = "Здравствуйте, я - чат-бот для медицинской диагностики.\n\n"
+    prompt += f"Пользователь жалуется на следующие симптомы: {', '.join(symptoms)}\n\n"
+    prompt += "Предварительный диагноз: "
     
     try:
-        user_text = message.text
-        
-        # Create a simple prompt that includes conversation history
-        prompt = system_instruction + "\n\nИстория диалога:\n"
-        
-        # Add conversation history
-        for past_msg in user_conversations[user_id]:
-            if past_msg['role'] == 'user':
-                prompt += f"Пользователь: {past_msg['text']}\n"
-            else:
-                prompt += f"Ассистент: {past_msg['text']}\n"
-        
-        # Add current message
-        prompt += f"Пользователь: {user_text}\n"
-        prompt += "Ассистент: "
-        
-        # Create proper configuration object
-        config = types.GenerateContentConfig(
+        # Генерируем ответ с помощью Gemini
+        config = genai.types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=2048
         )
         
-        # Generate response using proper config object
         response = client.models.generate_content(
             model="gemini-1.5-flash-latest",
             contents=prompt,
             config=config
         )
         
-        # Extract text from response
-        if hasattr(response, 'text'):
-            response_text = response.text
-        else:
-            response_text = "Извините, я не смог обработать ваш запрос."
+        # Формируем ответ
+        diagnosis_response = {
+            "diagnosis": response.text,
+            "conditions": ["Предварительный диагноз на основе симптомов"],
+            "tests": ["Общий анализ крови", "Консультация специалиста"],
+            "recommendations": [
+                "Обратитесь к врачу для точной диагностики",
+                "Не занимайтесь самолечением"
+            ],
+            "severity": "moderate",
+            "followUpRequired": True
+        }
         
-        # Update conversation history
-        user_conversations[user_id].append({'role': 'user', 'text': user_text})
-        user_conversations[user_id].append({'role': 'assistant', 'text': response_text})
-        
-        # Limit history length to prevent tokens from growing too large
-        if len(user_conversations[user_id]) > 10:
-            user_conversations[user_id] = user_conversations[user_id][-10:]
-        
-        # Reply to the user
-        bot.reply_to(message, response_text)
-        
+        return jsonify(diagnosis_response)
     except Exception as e:
-        error_msg = str(e)
-        # Truncate error message to prevent "message too long" errors
-        if len(error_msg) > 100:
-            error_msg = error_msg[:97] + "..."
-        bot.reply_to(message, f"Произошла ошибка: {error_msg}")
-        print(f"Error details: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        print(f"Error in diagnosis: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-# Start the bot
-print("Bot is running...")
-bot.infinity_polling()
+# Если файл запускается напрямую
+if __name__ == '__main__':
+    # Получаем порт из переменных окружения (для Render)
+    port = int(os.environ.get("PORT", 5000))
+    
+    # Запускаем бота в отдельном потоке
+    import threading
+    bot_thread = threading.Thread(target=bot.infinity_polling)
+    bot_thread.daemon = True
+    bot_thread.start()
+    
+    # Запускаем веб-сервер
+    app.run(host="0.0.0.0", port=port)
