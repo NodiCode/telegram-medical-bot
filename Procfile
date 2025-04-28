@@ -1,0 +1,1 @@
+web: gunicorn --config gunicorn_config.py bot:app
